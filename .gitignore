@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+
+# Env
+.env
+
+# Vector DB (VERY IMPORTANT)
+vectorstore*
+upload_*
+uploaded_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
