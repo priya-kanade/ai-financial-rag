@@ -1,7 +1,15 @@
-import streamlit as st
-import requests
+import sys
 import os
-import json
+
+# Add project root to Python path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import streamlit as st
+from app.agents import financial_agent
+from app.rag_pipeline import chat_with_document
+from app.ingest import load_pdf, chunk_data
+from app.retriever import create_vectorstore
+
 
 # =====================================================
 # PAGE CONFIG
@@ -357,16 +365,22 @@ with st.sidebar:
         if uploaded_file_name not in st.session_state.uploaded_files:
 
             with st.spinner("Uploading and indexing document..."):
-                res = requests.post(
-                    "http://127.0.0.1:8000/upload",
-                    files={"file": uploaded_file}
-                )
+                save_path = os.path.join("uploaded_data", uploaded_file.name)
 
-                if res.status_code == 200:
-                    st.success(f"✅ {uploaded_file_name} uploaded")
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+
+                # Process PDF
+                docs = load_pdf(save_path)
+                chunks = chunk_data(docs)
+
+                folder_name = f"vectorstores/upload/upload_{uploaded_file.name.replace('.pdf','')}"
+                create_vectorstore(chunks, path=folder_name)
+
+                st.success(f"✅ {uploaded_file_name} uploaded")
+
+                if uploaded_file_name not in st.session_state.uploaded_files:
                     st.session_state.uploaded_files.append(uploaded_file_name)
-                else:
-                    st.error("Upload failed")
 
     st.markdown("---")
 
@@ -470,46 +484,24 @@ if query:
         else:
             payload["selected_file"] = selected_uploads if selected_uploads else None
 
-        res = requests.post(
-            "http://127.0.0.1:8000/analyze",
-            json=payload
+        response , docs= financial_agent(
+            query=query,
+            selected_file=payload["selected_file"],
+            mode_source=payload["mode_source"]
         )
 
-        if res.status_code != 200:
-            st.error("⚠️ Error analyzing report")
+        st.markdown('<div class="result-card">', unsafe_allow_html=True)
 
-        else:
-            data = res.json()
-            response = data["response"]
+        st.markdown("## 📈 Analysis Results")
 
-            safe_response = response.replace("<", "&lt;").replace(">", "&gt;")
+        st.markdown(response)
 
-            st.markdown(
-                f"""
-                <div class="result-card">
-
-                    <h3 style="color:#38bdf8;">
-                        📈 Analysis Results
-                    </h3>
-
-                    <div style="
-                        color:white;
-                        line-height:1.8;
-                        font-size:15px;
-                        white-space:pre-wrap;
-                    ">
-                        {safe_response}
-                    </div>
-
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+        st.markdown('</div>', unsafe_allow_html=True)
 
             
 
             # DOWNLOAD
-            st.download_button(
+        st.download_button(
                 label="📥 Download Analysis",
                 data=response,
                 file_name="financial_analysis.txt",
@@ -543,47 +535,26 @@ if st.button("Ask AI"):
                 )
             }
 
-            res = requests.post(
-                "http://127.0.0.1:8000/chat",
-                params=payload
+            answer, _ = chat_with_document(
+                query=chat_query,
+                selected_file=payload["selected_file"],
+                mode_source=payload["mode_source"]
             )
 
-            if res.status_code != 200:
-                st.error("⚠️ Chat analysis failed")
-
-            else:
-                answer = res.json()["answer"]
-
-                st.markdown(f"""
+            st.markdown(f"""
                 <div class="chat-user">
                     <b>👤 You</b><br>
                     {chat_query}
                 </div>
                 """, unsafe_allow_html=True)
 
-                safe_answer = answer.replace("<", "&lt;").replace(">", "&gt;")
+            st.markdown('<div class="chat-ai">', unsafe_allow_html=True)
 
-                st.markdown(
-                    f"""
-                    <div class="chat-ai">
+            st.markdown("## 🤖 AI Financial Assistant")
 
-                        <h3 style="color:#38bdf8;">
-                            🤖 AI Financial Assistant
-                        </h3>
+            st.markdown(answer)
 
-                        <div style="
-                            color:white;
-                            line-height:1.8;
-                            font-size:15px;
-                            white-space:pre-wrap;
-                        ">
-                            {safe_answer}
-                        </div>
-
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # =====================================================
 # FOOTER
