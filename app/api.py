@@ -7,6 +7,7 @@ from typing import Union, List
 from app.agents import financial_agent
 from app.ingest import load_pdf, chunk_data
 from app.retriever import create_vectorstore
+from app.rag_pipeline import chat_with_document
 
 app = FastAPI()
 
@@ -63,3 +64,14 @@ def upload_pdf(file: UploadFile = File(...)):
     create_vectorstore(chunks, path=folder_name)
 
     return {"message": "Uploaded & Ready!"}
+
+@app.post("/chat")
+def chat(query: str, selected_file: str, mode_source: str = "demo"):
+
+    response, _ = chat_with_document(
+        query=query,
+        selected_file=selected_file,
+        mode_source=mode_source
+    )
+
+    return {"answer": response}

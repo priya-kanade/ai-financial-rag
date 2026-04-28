@@ -17,11 +17,11 @@ def map_reduce_summary(selected_file=None, mode_source="demo"):
 
     # 🔥 DEMO MODE
     if mode_source == "demo":
-        folder = f"vectorstore_{selected_file.replace('.pdf','')}"
+        folder = f"vectorstores/demo/vectorstore_{selected_file.replace('.pdf','')}"
     
     # 🔥 UPLOAD MODE
     else:
-        folder = f"upload_{selected_file.replace('.pdf','')}"
+        folder = f"vectorstores/upload/upload_{selected_file.replace('.pdf','')}"
 
     db = load_vectorstore(folder)
 

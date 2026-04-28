@@ -55,7 +55,7 @@ def get_response(query, selected_file=None, mode_source="demo"):
 
         # 🔥 SINGLE FILE
         elif selected_file:
-            folder = f"upload_{selected_file.replace('.pdf','')}"
+            folder = f"vectorstores/upload/upload_{selected_file.replace('.pdf','')}"
             db = load_vectorstore(folder)
             docs = db.similarity_search(enhanced_query, k=10)
 
@@ -64,7 +64,7 @@ def get_response(query, selected_file=None, mode_source="demo"):
 
     # 🔥 DEMO MODE
     else:
-        folder = f"vectorstore_{selected_file.replace('.pdf','')}"
+        folder = f"vectorstores/demo/vectorstore_{selected_file.replace('.pdf','')}"
         db = load_vectorstore(folder)
         docs = db.similarity_search(enhanced_query, k=10)
 
@@ -90,7 +90,7 @@ def get_response(query, selected_file=None, mode_source="demo"):
                 docs.extend(db.similarity_search(enhanced_query, k=3))
 
         elif mode_source == "upload" and selected_file:
-            db = load_vectorstore(f"upload_{selected_file.replace('.pdf','')}")
+            folder = f"vectorstores/upload/upload_{selected_file.replace('.pdf','')}"
             docs = db.similarity_search(enhanced_query, k=5)
 
         else:
@@ -255,3 +255,204 @@ def get_response(query, selected_file=None, mode_source="demo"):
         return response.content, docs
     else:
         return str(response), docs
+
+def chat_with_document(query, selected_file=None, mode_source="demo"):
+    
+    # =========================
+    # 🔹 LOAD VECTORSTORE
+    # =========================
+    if mode_source == "upload":
+        if not selected_file:
+            return "No uploaded file selected.", []
+        folder = f"vectorstores/upload/upload_{selected_file.replace('.pdf','')}"
+    else:
+        folder = f"vectorstores/demo/vectorstore_{selected_file.replace('.pdf','')}"
+
+    db = load_vectorstore(folder)
+
+    # =========================
+    # 🧠 INTENT DETECTION
+    # =========================
+    query_lower = query.lower()
+
+    if any(k in query_lower for k in ["revenue", "income", "profit", "earnings"]):
+        intent = "metric"
+    elif "risk" in query_lower:
+        intent = "risk"
+    elif any(k in query_lower for k in ["summary", "overview"]):
+        intent = "summary"
+    else:
+        intent = "general"
+
+    # =========================
+    # 🔍 MULTI-QUERY RETRIEVAL
+    # =========================
+    queries = [query]
+
+    if intent == "metric":
+        queries.extend([
+            "total revenue consolidated income statement",
+            "financial highlights total revenue",
+            "company total revenues fiscal year",
+            "net income operating income"
+        ])
+
+    docs = []
+    for q in queries:
+        docs.extend(db.similarity_search(q, k=4))
+
+    # =========================
+    # 🔄 REMOVE DUPLICATES
+    # =========================
+    unique_docs = []
+    seen = set()
+
+    for d in docs:
+        key = d.page_content[:100]
+        if key not in seen:
+            seen.add(key)
+            unique_docs.append(d)
+
+    docs = unique_docs
+
+    if not docs:
+        return "Not found in the document.", []
+
+    # =========================
+    # 🎯 FILTER + RERANK (CRITICAL)
+    # =========================
+    if intent == "metric":
+        filtered = []
+
+        for d in docs:
+            text = d.page_content.lower()
+
+            # ❌ remove irrelevant
+            if "deferred revenue" in text:
+                continue
+            if "segment" in text:
+                continue
+            if "geographic" in text:
+                continue
+
+            filtered.append(d)
+
+        if filtered:
+            docs = filtered
+
+        # 🔥 scoring
+        scored_docs = []
+
+        for d in docs:
+            text = d.page_content.lower()
+            score = 0
+
+            if "total revenue" in text or "total revenues" in text:
+                score += 5
+            if "consolidated" in text:
+                score += 3
+            if "income statement" in text:
+                score += 3
+            if "$" in text or "million" in text or "billion" in text:
+                score += 2
+
+            scored_docs.append((d, score))
+
+        scored_docs = sorted(scored_docs, key=lambda x: x[1], reverse=True)
+        docs = [d for d, s in scored_docs[:3]]
+
+    # =========================
+    # 🔹 CONTEXT
+    # =========================
+    context = "\n\n".join([d.page_content[:1200] for d in docs])
+
+    # =========================
+    # 🔥 PROMPTS
+    # =========================
+    if intent == "metric":
+        prompt = f"""
+You are a financial analyst.
+
+Your task is to find ONLY the TOTAL REVENUE of the company.
+
+STRICT RULES:
+- ONLY return revenue
+- DO NOT return:
+  - equity
+  - assets
+  - liabilities
+  - any other metric
+- If revenue is NOT present in the context, return EXACTLY:
+  "Not found in the document"
+
+- Handle units correctly:
+  - If "in thousands" → convert to billions/millions
+
+FORMAT:
+Answer: <value OR Not found in the document>
+Source: <short line>
+
+Context:
+{context}
+
+Question:
+{query}
+"""
+
+    elif intent == "risk":
+        prompt = f"""
+        Identify key risks.
+
+        RULES:
+        - Bullet points
+        - No repetition
+
+        Context:
+        {context}
+        """
+
+    elif intent == "summary":
+        prompt = f"""
+        Provide concise summary:
+        - performance
+        - trends
+        - insights
+
+        Context:
+        {context}
+        """
+
+    else:
+        prompt = f"""
+        Answer based only on context.
+
+        RULES:
+        - concise
+        - no guessing
+
+        Context:
+        {context}
+
+        Question:
+        {query}
+        """
+
+    # =========================
+    # 🔹 LLM
+    # =========================
+    response = llm.invoke(prompt)
+
+    response_text = response.content if hasattr(response, "content") else str(response)
+     # =========================
+# 🔹 SOURCE + PAGE
+# =========================
+    page_info = ""
+
+    if docs:
+        first_doc = docs[0]
+        page = first_doc.metadata.get("page", "Unknown")
+        source = first_doc.metadata.get("source", "Unknown")
+
+        page_info = f"\n\n📄 Source: {source} | Page: {page}"
+
+    return response_text + page_info, docs
