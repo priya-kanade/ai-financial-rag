@@ -169,7 +169,7 @@ uvicorn app.api:app --reload
 ### 🔹 Start Frontend
 
 ```bash
-streamlit run app.py
+streamlit run frontend/streamlit_app.py
 ```
 
 ---
