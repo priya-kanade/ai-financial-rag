@@ -5,6 +5,6 @@ import os
 load_dotenv()
 
 llm = ChatGroq(
-    model_name="llama-3.1-8b-instant",
+    model_name="llama-3.3-70b-versatile",
     temperature=0
 )
