@@ -86,7 +86,7 @@ User Query / Action
 | -------------- | -------------------- |
 | Backend        | FastAPI              |
 | Frontend       | Streamlit            |
-| LLM            | Groq (LLaMA 3)       |
+| LLM            | Groq (llama-3.3-70b-versatile)       |
 | Embeddings     | HuggingFace (MiniLM) |
 | Vector DB      | FAISS                |
 | PDF Processing | pdfplumber           |
